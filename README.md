@@ -8,7 +8,7 @@ This project is a Flask-based web application that allows users to upload an IMD
 - **File Upload**: Upload an IMDb dataset in CSV format.
 - **Natural Language Query Interface**: Enter natural language queries (e.g., "average rating", "top movies") to generate corresponding SQL queries.
 - **Query Execution**: The application executes the generated SQL on the uploaded dataset.
-- **CSV Output**: Download the results of the query as a CSV file.
+- **Query Output**: Shows the results of the query as a table.
 
 ## Requirements
 
