@@ -1,123 +1,113 @@
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify , render_template , Response
 from flask_cors import CORS
+import duckdb
+import pandas as pd
 import os
+import google.generativeai as genai
+from dotenv import load_dotenv
 import cloudinary
 import cloudinary.uploader
-import pandas as pd
-import google.generativeai as genai
-import duckdb
-import requests  # For downloading files
-import io
-import logging
+from cloudinary.utils import cloudinary_url
 
-# Configure logging
-logging.basicConfig(filename='app.log', level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+# Load environment variables
+load_dotenv()
 
-# Cloudinary Configuration (Directly using API keys)
-cloudinary.config(
-    cloud_name="xyz",  # Replace with your Cloudinary Cloud Name
-    api_key="12345",  # Replace with your Cloudinary API Key
-    api_secret="dygchbc-l98",  # Replace with your Cloudinary API Secret
+google_api_key = os.getenv("GOOGLE_API_KEY")
+cloudinary_cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME")
+cloudinary_api_key = os.getenv("CLOUDINARY_API_KEY")
+cloudinary_api_secret = os.getenv("CLOUDINARY_API_SECRET")
+cloudinary.config( 
+    cloud_name = cloudinary_cloud_name, 
+    api_key = cloudinary_api_key, 
+    api_secret = cloudinary_api_secret,
     secure=True
 )
 
-# Google API key for AI
-google_api_key = "uhscjsdcusjbk"  # Replace with your Google API Key
-
-# Flask App Setup
 app = Flask(__name__)
-CORS(app, origins="*")  # Allow cross-origin requests
+cors = CORS(app,origins="*")
 
-# Global variable to store the uploaded IMDb file (if any)
-imdb_df = None
-
-
-@app.route("/", methods=["GET"])
+@app.route('/', methods=['GET'])
 def home():
-    return jsonify({"message": "Server running successfully"})
+    return jsonify({"message":"Server running successfully"})
 
-
-@app.route("/upload_imdb", methods=["POST"])
-def upload_imdb():
-    global imdb_df  # Use the global variable to store the uploaded IMDb file
-
-    if "file" not in request.files:
+# Route for uploading files
+@app.route('/upload_file', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
         return jsonify({"error": "No file provided."}), 400
 
-    file = request.files["file"]
-    if file.filename == "":
+    csv_file = request.files['file']
+    if csv_file.filename == '':
         return jsonify({"error": "No selected file."}), 400
 
     try:
-        # Log the upload attempt
-        logging.info(f"Uploading file: {file.filename}")
-
-        imdb_df = pd.read_csv(file)
-        logging.info(f"File uploaded successfully")
-        return jsonify({"File uploaded successfully!"}), 200  # Updated message here
+        
+        upload_result = cloudinary.uploader.upload(
+            csv_file,
+            resource_type="raw",
+            public_id=csv_file.filename.split('.')[0]
+        )
+        return jsonify({"message": "File uploaded successfully!", "filePath": upload_result["secure_url"]}), 200
     except Exception as e:
-        # Log the error
-        logging.error(f"Error uploading file: {str(e)}")
-        imdb_df = None  # Reset imdb_df on error
-        return jsonify({"error": f"Error uploading file: {str(e)}"}), 500
+        return jsonify({"error": f"Error uploading to Cloudinary: {str(e)}"}), 500
 
-
-@app.route("/generate_sql", methods=["POST"])
+# Route for generating SQL
+@app.route('/generate_sql', methods=['POST'])
 def generate_sql():
-    if imdb_df is None:
-        return jsonify({"error": "file not uploaded yet."}), 400
-
+    
     genai.configure(api_key=google_api_key)
+    model = genai.GenerativeModel("gemini-2.0-flash-exp")
     data = request.get_json()
-
-    if not data or "text" not in data:
+    if not data or 'text' not in data:
         return jsonify({"error": "Missing text input."}), 400
 
-    text_input = data["text"]
+    text_input = data['text']
 
-    # Prepare prompt with more context for better query generation
-    prompt = f"""
-    You are an expert SQL generator specializing in DuckDB queries. 
-
-    Given the following natural language request: "{text_input}" 
-
-    and the structure of this CSV file: {imdb_df.head().to_string(index=False)}, 
-
-    generate a valid DuckDB query to retrieve the requested information. 
-
-    Use the table name 'uploaded_csv' and ensure the column names are used correctly. 
-
-    Example: 
-
-    Request: "Show me the name and release year of all shows with a rating above 9.0." 
-    Query: SELECT `Name`, `Year` FROM uploaded_csv WHERE `Rating` > 9.0;
-
-    Return only the SQL query without any additional text. 
-    """
+    if not data or 'filePath' not in data:
+        return jsonify({"error": "No file uploaded. Please upload a file first."}), 400
+    
+    filePath = data['filePath']
 
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash-exp")
-        response = model.generate_content(prompt)
-        sql_query = response.text.strip()
+        df = pd.read_csv(filePath)
+    except Exception as e:
+        return jsonify({"error": f"Error reading CSV file: {str(e)}"}), 400
 
+    prompt = (
+        f"You are an expert SQL generator. Given the following text request: \"{text_input}\" "
+        f"and the structure of this CSV file: {df.head().to_string(index=False)}, "
+        f"give answer in SQL query only irrespective of actual meaning and use table name as uploaded_csv and use proper alias where needed"
+        f"take column headings as they are without adding any character to it or deleting white spaces"
+        f"It should contain only SQL nothing else"
+    )
+
+    try:
+        response = model.generate_content(prompt)
+        sql_query = response.text
+        print(f"Generated SQL query: {sql_query}")
     except Exception as e:
         return jsonify({"error": f"Error generating SQL: {str(e)}"}), 500
+
+    sql_query = sql_query.replace("```", "").replace("sql", "").replace("\n", " ").strip()
+    sql_query = sql_query.replace("your_table_name", "uploaded_csv")
 
     # Execute the SQL query using DuckDB
     try:
         conn = duckdb.connect()
-        conn.register("uploaded_csv", imdb_df)
-        output_table = conn.execute(sql_query).fetchdf() 
+        conn.register('uploaded_csv', df)
+        output_table = conn.execute(sql_query).fetchdf()
     except Exception as e:
-        return jsonify({"error": f"Error executing SQL: {str(e)} - {sql_query}"}), 500 
+        return jsonify({"error": f"Error executing SQL: {str(e)}"}), 500
 
-    # Convert output to CSV
     csv_data = output_table.to_csv(index=False)
+
     return Response(
-        csv_data, mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=output.csv"}
+        csv_data,
+        mimetype='text/csv',
+        headers={"Content-Disposition": "attachment; filename=output.csv"}
     )
 
-
-if __name__ == "__main__":
-    port = 8080  # Port set directly to 8080, matching the Flask server output
-    app.run(host="0.0.0.0", port=port)
+if __name__ == '__main__':
+    # app.run(debug=True,port=8080)
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
