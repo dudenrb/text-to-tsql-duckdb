@@ -15,14 +15,14 @@ logging.basicConfig(filename='app.log', level=logging.DEBUG, format='%(asctime)s
 
 # Cloudinary Configuration (Directly using API keys)
 cloudinary.config(
-    cloud_name="dudenrb",  # Replace with your Cloudinary Cloud Name
-    api_key="225868964835855",  # Replace with your Cloudinary API Key
-    api_secret="rwz6RMDbQbihwYoIoqGZ8kh-l98",  # Replace with your Cloudinary API Secret
+    cloud_name="xyz",  # Replace with your Cloudinary Cloud Name
+    api_key="12345",  # Replace with your Cloudinary API Key
+    api_secret="dygchbc-l98",  # Replace with your Cloudinary API Secret
     secure=True
 )
 
 # Google API key for AI
-google_api_key = "AIzaSyBi1wQcpPlCAfP9MSHgLSO90WcHBmRnnYI"  # Replace with your Google API Key
+google_api_key = "uhscjsdcusjbk"  # Replace with your Google API Key
 
 # Flask App Setup
 app = Flask(__name__)
