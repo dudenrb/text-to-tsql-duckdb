@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text-to-SQL</title>
+</head>
+<body>
+    <h1>DuckDB Query Interface</h1>
+
+    <form id="uploadForm" enctype="multipart/form-data">
+        <label for="fileInput">Choose CSV file:</label>
+        <input type="file" id="fileInput" name="file" accept=".csv" required />
+        <br />
+        <button type="submit">Upload File</button>
+    </form>
+
+    <h2>Enter a Natural Language Query:</h2>
+    <select id="querySelect">
+        <option value="">Select a sample query...</option>
+        <option value="Show me the top 5 customers by total orders">Top 5 Customers by Total Orders</option>
+        <option value="Calculate average order value by country">Average Order Value by Country</option>
+        <option value="List all orders from the past month">Orders from Past Month</option>
+        <option value="Find customers who spent more than $1000">Customers Spent More Than $1000</option>
+    </select>
+    <br />
+    <textarea id="textInput" rows="4" cols="50" placeholder="Enter your query here..."></textarea>
+    <br />
+    <button id="generateSQLButton">Generate SQL</button>
+
+    <h2>Query Results</h2>
+    <pre id="sqlOutput"></pre>
+    <pre id="csvOutput"></pre>
+
+    <script>
+        const uploadForm = document.getElementById('uploadForm');
+        const generateSQLButton = document.getElementById('generateSQLButton');
+        const sqlOutput = document.getElementById('sqlOutput');
+        const csvOutput = document.getElementById('csvOutput');
+        const querySelect = document.getElementById('querySelect');
+        let uploadedFilePath = null;
+
+        // Handle IMDb file upload
+        uploadForm.addEventListener('submit', async function(event) {
+            event.preventDefault();
+
+            const formData = new FormData();
+            formData.append('file', document.getElementById('fileInput').files[0]);
+
+            try {
+                const response = await fetch('http://127.0.0.1:8080/upload_imdb', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const result = await response.json();
+                if (response.ok) {
+                    alert(result.message);
+                } else {
+                    alert(`Error: ${result.error}`);
+                }
+            } catch (error) {
+                console.error('Error uploading file:', error);
+                alert('Error uploading file.');
+            }
+        });
+
+        // Handle sample query selection
+        querySelect.addEventListener('change', function() {
+            const selectedQuery = querySelect.value;
+            textInput.value = selectedQuery;
+        });
+
+        // Handle SQL generation
+        generateSQLButton.addEventListener('click', async function() {
+            const textInput = document.getElementById('textInput').value;
+
+            if (!textInput) {
+                alert('Please enter a query or select a sample query.');
+                return;
+            }
+
+            const requestData = {
+                text: textInput
+            };
+
+            try {
+                const response = await fetch('http://127.0.0.1:8080/generate_sql', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestData),
+                });
+
+                const result = await response.json();
+                if (response.ok) {
+                    sqlOutput.textContent = result.sql_query;
+                    downloadCSV(result.file);
+                } else {
+                    alert(`Error: ${result.error}`);
+                }
+            } catch (error) {
+                console.error('Error generating SQL:', error);
+                alert('Error generating SQL.');
+            }
+        });
+
+        // Function to download the generated CSV file
+        function downloadCSV(filePath) {
+            const link = document.createElement('a');
+            link.href = filePath;
+            link.download = 'output.csv';
+            link.click();
+        }
+    </script>
+</body>
+</html>
